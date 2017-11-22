@@ -1,10 +1,8 @@
 package hello;
 
-import javax.sql.DataSource;
-
 import org.springframework.batch.core.Job;
-import org.springframework.batch.core.JobExecutionListener;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.DefaultBatchConfigurer;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
@@ -16,14 +14,19 @@ import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.file.mapping.DefaultLineMapper;
 import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.core.io.Resource;
+
+import javax.sql.DataSource;
 
 @Configuration
 @EnableBatchProcessing
-public class BatchConfiguration {
+@PropertySource("file:./batch.properties")
+public class BatchConfiguration extends DefaultBatchConfigurer {
 
     @Autowired
     public JobBuilderFactory jobBuilderFactory;
@@ -32,13 +35,16 @@ public class BatchConfiguration {
     public StepBuilderFactory stepBuilderFactory;
 
     @Autowired
-    public DataSource dataSource;
+    @Qualifier("applicationDataSource")
+    public DataSource applicationDataSource;
 
-    // tag::readerwriterprocessor[]
+    @Value("file:${inputFile}")
+    private Resource inputFile;
+
     @Bean
     public FlatFileItemReader<Person> reader() {
         FlatFileItemReader<Person> reader = new FlatFileItemReader<Person>();
-        reader.setResource(new ClassPathResource("sample-data.csv"));
+        reader.setResource(inputFile);
         reader.setLineMapper(new DefaultLineMapper<Person>() {{
             setLineTokenizer(new DelimitedLineTokenizer() {{
                 setNames(new String[] { "firstName", "lastName" });
@@ -50,22 +56,27 @@ public class BatchConfiguration {
         return reader;
     }
 
+    @Override
+    @Autowired
+    public void setDataSource(@Qualifier("springBatchDataSource") DataSource batchDataSource) {
+        super.setDataSource(batchDataSource);
+    }
+
     @Bean
     public PersonItemProcessor processor() {
-        return new PersonItemProcessor();
+       PersonItemProcessor personItemProcessor = new PersonItemProcessor();
+        return personItemProcessor;
     }
 
     @Bean
     public JdbcBatchItemWriter<Person> writer() {
         JdbcBatchItemWriter<Person> writer = new JdbcBatchItemWriter<Person>();
+        writer.setDataSource(applicationDataSource);
+        writer.setSql("insert into people (id_person, first_name, last_name) values (default, :firstName, :lastName);");
         writer.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<Person>());
-        writer.setSql("INSERT INTO people (first_name, last_name) VALUES (:firstName, :lastName)");
-        writer.setDataSource(dataSource);
         return writer;
     }
-    // end::readerwriterprocessor[]
 
-    // tag::jobstep[]
     @Bean
     public Job importUserJob(JobCompletionNotificationListener listener) {
         return jobBuilderFactory.get("importUserJob")
@@ -85,5 +96,5 @@ public class BatchConfiguration {
                 .writer(writer())
                 .build();
     }
-    // end::jobstep[]
+
 }
