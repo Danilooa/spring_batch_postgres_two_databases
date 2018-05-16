@@ -5,4 +5,4 @@ It's designed to work on postgres 9.4.
 
 You will need to create two databases.
 One of them must be created using the script people_database.sql.
-The another can be an empty datase as the spring batch will create all the necessary tables.
+The another can be an empty database as the spring batch will create all the necessary tables.
